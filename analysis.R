@@ -40,17 +40,8 @@ for (i in 1:length(colnames(x))){
   X.7[[i]] <- as.matrix(data_7)
 }
 
-
-head(runXg.cv(X[[1]]))
-head(runXg.cv(X.3[[1]])) 
-# head(runXg.cv(X.yinhen.7))
-
-X.xg <- runXg.cv(X.yinhen.3)[,1:2]
-X.xg.m <- melt(X.xg)
-ggplot(X.tet25, aes(Gain, Feature)) + geom_tile(aes(fill=Gain), colour = "black")
-
-n <- 100
-loopOverX <- function(x){
+n <- 1000
+loopOverList <- function(x){
   iter <- 0
   inner <- list()
   antibiotic_name <- colnames(x)[1]
@@ -66,16 +57,14 @@ loopOverX <- function(x){
 }
 
 
-master_lists <- lapply(X.3, loopOverX) #list of all xgboost iterations of antibiotics
+ab_lists <- lapply(X.3, loopOverList) #list of all xgboost iterations of antibiotics
 
-master_matrix <- lapply(master_lists, function(x){ do.call(rbind, x)})
+ab_matrices <- lapply(ab_lists, function(x){ do.call(rbind, x)}) #list of 8 antibiotic matrices
 
-master <- do.call("rbind", master_matrix)
+master <- do.call("rbind", ab_matrices)
 
-score <- rev(1:5)
+ab_gain_mean <- aggregate(master$Gain, by = list(feature = master$Feature, AB = master$antibiotic_name), FUN = mean)
 
-for (i in 1:8){
-  for (j in 1:100){
-    cbind(score,master_matrix[[i]][which(master_matrix[[i]]$iteration == j)[1:5],])
-  }
-}
+p <- ggplot(ab_gain_mean, aes(x = feature, y = x, label = feature)) + geom_point(aes(color = x)) + facet_wrap(~ AB) + theme(axis.title.x = element_text(face="bold", colour="#990000", size=10), axis.text.x = element_text(angle=90, vjust=0.5, size=4))
+
+p + geom_text(aes(label=ifelse(x > 0.2, as.character(feature),'')), hjust=0, vjust=0, size = 3) + labs(title="Mean of SNP Gains in 1000 runs per Antibiotic(8)")
