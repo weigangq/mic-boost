@@ -10,14 +10,14 @@ yinhen.7 <- read.csv("~/qiulab/mskcc-sepsis-resistance/mutualReduced_7.csv", hea
 x <- x[-which(rownames(x) == "PA7"),] #remove PA7 b/c it's another species
 
 X <- list() #master list of all antibiotics
-X.3 <- list() #master list of all SNPs reduced to 75%
-X.7 <- list() #master list of all SNPs reduced to 25%
+X.3 <- list() #master list of all SNPs reduced to 75% using MI algorithm
+X.7 <- list() #master list of all SNPs reduced to 25% using MI algorithm
 
-#process row names to match table x.snps and x
+#make row names match tables x.snps and x
 rownames(x.snps) <- sapply(strsplit(rownames(x.snps), "_"), "[", 1)
 rownames(x.snps)[which(rownames(x.snps) == "PA01")] <- "PAO1"
 
-x.new <- x.snps[row.names(x.snps) %in% row.names(x),]
+x.new <- x.snps[row.names(x.snps) %in% row.names(x),] #reduced b/c database doesnt have all presented strains
 
 
 for (i in 1:length(colnames(x))){
@@ -35,6 +35,7 @@ for (i in 1:length(colnames(x))){
   colnames(data_3)[1] <- colnames(X[[i]])[1]
   X.3[[i]] <- as.matrix(data_3)
   
+  #Reduced list X.7
   data_7 <- cbind(X[[i]][,1], yinhen.7)
   colnames(data_7)[1] <- colnames(X[[i]])[1]
   X.7[[i]] <- as.matrix(data_7)
@@ -57,14 +58,89 @@ loopOverList <- function(x){
 }
 
 
-ab_lists <- lapply(X.3, loopOverList) #list of all xgboost iterations of antibiotics
+#loopOverList will cross-validate rows of each df in list & iterate 1000x
+#rationale behind 1000x iteration is so that it will converge/stabalize & we capture the most frequently occuring highest ranked SNP
+#note: some iterations in the same AB won't have same dim size b/c some small scoring SNPs don't show
+ab_lists <- lapply(X.3, loopOverList) #list of all xgboost iterations of AB
 
 ab_matrices <- lapply(ab_lists, function(x){ do.call(rbind, x)}) #list of 8 antibiotic matrices
 
 master <- do.call("rbind", ab_matrices)
 
-ab_gain_mean <- aggregate(master$Gain, by = list(feature = master$Feature, AB = master$antibiotic_name), FUN = mean)
+ab_gain_mean <- aggregate(master$Gain, by = list(feature = master$Feature, AB = master$antibiotic_name), FUN = mean) #calculate mean by feature and ab name
 
+
+
+##VISUALIZATION##
+library(ggplot2)
+
+#facet graph of the average of significant SNPs after 1000 iterations per AB
 p <- ggplot(ab_gain_mean, aes(x = feature, y = x, label = feature)) + geom_point(aes(color = x)) + facet_wrap(~ AB) + theme(axis.title.x = element_text(face="bold", colour="#990000", size=10), axis.text.x = element_text(angle=90, vjust=0.5, size=4))
 
 p + geom_text(aes(label=ifelse(x > 0.2, as.character(feature),'')), hjust=0, vjust=0, size = 3) + labs(title="Mean of SNP Gains in 1000 runs per Antibiotic(8)")
+
+
+#tree plotting
+
+library(phytools)
+cdg.tr <- read.tree(file = "~/qiulab/cdg/data/cdg-tree-mid.dnd")
+cdg.names <- read.table(file = "~/qiulab/cdg/data/cdg.strains.txt3", row.names = 1, stringsAsFactors = F)
+cdg.tr$tip.label <- cdg.names[cdg.tr$tip.label,1]
+
+#make new x table re-ordered by phylo tree tips
+#FIND MISMATCHING ROWS 
+x.false <- which(rownames(x) %in% cdg.names[,1] == FALSE) #strain not in table x
+cdg.false <- which(cdg.names[,1] %in% rownames(x)[-x.false] == FALSE) #strain not in table cdg.names
+x.cdg <- as.matrix(x[-x.false,])
+x.cdg <- rbind(x.cdg, c(rep(NA,8))) #pad table x.cdg w/ "W70332" to match cdg.names table
+rownames(x.cdg)[30] <- "W70332"
+x.cdg <- x.cdg[match(cdg.tr$tip.label,row.names(x.cdg)),] #reorder to tree tips
+
+
+
+
+#reorder snps by tree tips
+snp.reordered <- x.new[match(rownames(x.cdg), rownames(x.new)),] 
+
+
+#draw casaul snps w/ text function
+displaySignificantSNPs <- function(AB){
+  
+  par(mar=c(5,1,4,0)) #fix margin to fit large graph
+  ##DRAW PLOT SIZE & DISPLAY PHYLOGENY
+  plot(cdg.tr, "p", use.edge.length = FALSE, x.lim = 70, cex = 0.8, main = toupper(AB)) #expand graph width w/ x.lim
+  segments(rep(40, 30), 1:30, rep(40, 30) + x.cdg[,AB], 1:30, lwd = 2, lty = "solid") #draw AB Resistance Index w/ segments function
+  axis(1, at = c(38, 39, 40, 41,42,43), labels = c(-2,-1,0,1,2,3), cex.axis = 0.7)
+  abline(v = 40)
+  mtext("Antibiotic \nResistance \nIndex", at = 40, side = 1, line = 4, cex = 0.8)
+  
+  
+  snp.text.reg <- ab_gain_mean[which(ab_gain_mean[,2] == AB & ab_gain_mean[,3] > 0.1 & ab_gain_mean[,3] < 0.2),1] #get snp names by AB & lt 0.2 but mt 0.1
+  mtext(snp.text.reg, side = 3, at = 50:(49+length(snp.text.reg)), cex = 0.6, las=2, adj = 0.2) #paste snps lt 0.2 but mt 0.1
+  init.length <- 50:(49+length(snp.text.reg))
+  for (i in 1:length(snp.text.reg)){
+    text(49+i, 1:30, labels = snp.reordered[,snp.text.reg[i]], cex = 0.7) #display SNPs lt 0.2
+  }
+  
+  snp.text.high <- ab_gain_mean[which(ab_gain_mean[,2] == AB & ab_gain_mean[,3] > 0.2),1] #get snp names by AB & mt 0.2
+  if (length(snp.text.high) >= 1) {
+    init.continu <- tail(init.length, 1)+1:length(snp.text.high)
+    mtext(snp.text.high, side = 3, at = init.continu, cex = 0.6, las=2, adj = 0.2, col = "red") #paste them onto graph
+    for (i in 1:length(snp.text.high)) {
+      text(tail(init.length, 1)+i, 1:30, labels = snp.reordered[,snp.text.high[i]], cex = 0.7, col = "red")
+      }
+  } else {
+    NULL
+  }
+}
+
+#variable to change AB name
+AB <- colnames(x.cdg)[8]
+displaySignificantSNPs(AB)
+
+#individual AB
+ggplot(ab_gain_mean[which(ab_gain_mean$AB == AB),], aes(x = feature, y = x, label = feature))+ geom_point(aes(color = x)) + geom_text(aes(label=ifelse(x > 0.2, as.character(feature),'')), hjust=0, vjust=0, size = 3) + theme(axis.title.x = element_text(face="bold", colour="#990000", size=10), axis.text.x = element_text(angle=90, vjust=0.5, size=4), plot.margin = margin(4,7,4,10, "cm")) + labs(title=AB)
+
+
+#create heatmap
+#phylo.heatmap(cdg.tr, x)
