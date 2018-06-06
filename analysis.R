@@ -104,7 +104,8 @@ snp.reordered <- x.new[match(rownames(x.ab), rownames(x.new)),]
 #this function is used to draw the phylogeny of 30 strains w/ causal SNPs alongside
 displaySignificantSNPs <- function(AB){
   
-  par(mar=c(5,1,4,0)) #fix margin to fit large graph
+  # par(mar=c(5,1,4,0)) #fix margin to fit large graph
+  par(mfrow=c(1,2))
   ##DRAW PLOT SIZE & DISPLAY PHYLOGENY
   plot(cdg.tr, "p", use.edge.length = FALSE, x.lim = 70, cex = 0.8, main = toupper(AB)) #expand graph width w/ x.lim
   segments(rep(40, 30), 1:30, rep(40, 30) + x.ab[,AB], 1:30, lwd = 2, lty = "solid") #draw AB Resistance Index w/ segments function
@@ -124,16 +125,19 @@ displaySignificantSNPs <- function(AB){
     col <- ifelse(match(label, high), "red", "black")
     text(49+i, 1:30, labels = snp.reordered[,label], cex = 0.7, col = col) #display SNPs lt 0.2
   }
+  
+  gain_mean_specific <- ab_gain_mean[which(ab_gain_mean$AB == AB),]
+  plot(gain_mean_specific[,3], xaxt="n", ylab = "average", xlab = "names")
+  axis(1, at=1:nrow(gain_mean_specific), labels=gain_mean_specific[,1], las=2, cex.axis = 0.8)
+  distinct <- which(gain_mean_specific[,3] >.1) #specific plotting points
+  text(y = gain_mean_specific[distinct,3], x=distinct, labels = gain_mean_specific[distinct,1], cex = 0.7, pos = 3)
 }
 
 
 
 #variable to change AB name
-AB <- colnames(x.ab)[4] #can cycle through all 8
+AB <- colnames(x.ab)[3] #can cycle through all 8
 displaySignificantSNPs(AB)
-
-#individual AB;
-ggplot(ab_gain_mean[which(ab_gain_mean$AB == AB),], aes(x = feature, y = x, label = feature))+ geom_point(aes(color = x)) + geom_text(aes(label=ifelse(x > 0.15, as.character(feature),'')), hjust=0, vjust=0, size = 3) + theme(axis.title.x = element_text(face="bold", colour="#990000", size=10), axis.text.x = element_text(angle=90, vjust=0.5, size=4), plot.margin = margin(4,7,4,10, "cm")) + labs(title=AB)
 
 
 #create heatmap
