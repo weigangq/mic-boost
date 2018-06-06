@@ -63,7 +63,7 @@ loopOverList <- function(x){
 #note: some iterations in the same AB won't have same dim size b/c some small scoring SNPs don't show
 ab_lists <- lapply(X.3, loopOverList) #list of all xgboost iterations of AB
 
-ab_matrices <- lapply(ab_lists, function(x){ do.call(rbind, x)}) #list of 8 antibiotic matrices
+ab_matrices <- lapply(ab_lists, function(x){ do.call(rbind, x)}) #ab_lists to 8 matrices
 
 master <- do.call("rbind", ab_matrices)
 
@@ -91,55 +91,49 @@ cdg.tr$tip.label <- cdg.names[cdg.tr$tip.label,1]
 #FIND MISMATCHING ROWS 
 x.false <- which(rownames(x) %in% cdg.names[,1] == FALSE) #strain not in table x
 cdg.false <- which(cdg.names[,1] %in% rownames(x)[-x.false] == FALSE) #strain not in table cdg.names
-x.cdg <- as.matrix(x[-x.false,])
-x.cdg <- rbind(x.cdg, c(rep(NA,8))) #pad table x.cdg w/ "W70332" to match cdg.names table
-rownames(x.cdg)[30] <- "W70332"
-x.cdg <- x.cdg[match(cdg.tr$tip.label,row.names(x.cdg)),] #reorder to tree tips
-
-
-
+x.ab <- as.matrix(x[-x.false,])
+x.ab <- rbind(x.ab, c(rep(NA,8))) #pad table x.ab w/ "W70332" to match cdg.names table
+rownames(x.ab)[30] <- "W70332"
+x.ab <- x.ab[match(cdg.tr$tip.label,row.names(x.ab)),] #reorder AB to tree tips
 
 #reorder snps by tree tips
-snp.reordered <- x.new[match(rownames(x.cdg), rownames(x.new)),] 
+snp.reordered <- x.new[match(rownames(x.ab), rownames(x.new)),] 
 
 
-#draw casaul snps w/ text function
+#before using this function, please make sure snp.reordered variable exists
+#this function is used to draw the phylogeny of 30 strains w/ causal SNPs alongside
 displaySignificantSNPs <- function(AB){
   
   par(mar=c(5,1,4,0)) #fix margin to fit large graph
   ##DRAW PLOT SIZE & DISPLAY PHYLOGENY
   plot(cdg.tr, "p", use.edge.length = FALSE, x.lim = 70, cex = 0.8, main = toupper(AB)) #expand graph width w/ x.lim
-  segments(rep(40, 30), 1:30, rep(40, 30) + x.cdg[,AB], 1:30, lwd = 2, lty = "solid") #draw AB Resistance Index w/ segments function
+  segments(rep(40, 30), 1:30, rep(40, 30) + x.ab[,AB], 1:30, lwd = 2, lty = "solid") #draw AB Resistance Index w/ segments function
   axis(1, at = c(38, 39, 40, 41,42,43), labels = c(-2,-1,0,1,2,3), cex.axis = 0.7)
   abline(v = 40)
   mtext("Antibiotic \nResistance \nIndex", at = 40, side = 1, line = 4, cex = 0.8)
   
+  low <- ab_gain_mean[which(ab_gain_mean[,2] == AB & ab_gain_mean[,3] > 0.1 & ab_gain_mean[,3] < 0.2),1] #get snp names by AB & lt 0.2 but mt 0.1
+  high <- ab_gain_mean[which(ab_gain_mean[,2] == AB & ab_gain_mean[,3] > 0.2),1] #get snp names by AB & mt 0.2
+
+  name.ordered <- paste("SNP",sep="", sort(as.numeric(gsub(".*P","", c(low, high))))) #combine & sort low, high; this step is necessary for display
   
-  snp.text.reg <- ab_gain_mean[which(ab_gain_mean[,2] == AB & ab_gain_mean[,3] > 0.1 & ab_gain_mean[,3] < 0.2),1] #get snp names by AB & lt 0.2 but mt 0.1
-  mtext(snp.text.reg, side = 3, at = 50:(49+length(snp.text.reg)), cex = 0.6, las=2, adj = 0.2) #paste snps lt 0.2 but mt 0.1
-  init.length <- 50:(49+length(snp.text.reg))
-  for (i in 1:length(snp.text.reg)){
-    text(49+i, 1:30, labels = snp.reordered[,snp.text.reg[i]], cex = 0.7) #display SNPs lt 0.2
-  }
+  mtext(name.ordered, side = 3, at = 50:(49+length(name.ordered)), cex = 0.6, las = 2, adj=0.2) #display SNP names
   
-  snp.text.high <- ab_gain_mean[which(ab_gain_mean[,2] == AB & ab_gain_mean[,3] > 0.2),1] #get snp names by AB & mt 0.2
-  if (length(snp.text.high) >= 1) {
-    init.continu <- tail(init.length, 1)+1:length(snp.text.high)
-    mtext(snp.text.high, side = 3, at = init.continu, cex = 0.6, las=2, adj = 0.2, col = "red") #paste them onto graph
-    for (i in 1:length(snp.text.high)) {
-      text(tail(init.length, 1)+i, 1:30, labels = snp.reordered[,snp.text.high[i]], cex = 0.7, col = "red")
-      }
-  } else {
-    NULL
+  for (i in 1:length(name.ordered)){
+    label = name.ordered[i]
+    col <- ifelse(match(label, high), "red", "black")
+    text(49+i, 1:30, labels = snp.reordered[,label], cex = 0.7, col = col) #display SNPs lt 0.2
   }
 }
 
+
+
 #variable to change AB name
-AB <- colnames(x.cdg)[8]
+AB <- colnames(x.ab)[4] #can cycle through all 8
 displaySignificantSNPs(AB)
 
-#individual AB
-ggplot(ab_gain_mean[which(ab_gain_mean$AB == AB),], aes(x = feature, y = x, label = feature))+ geom_point(aes(color = x)) + geom_text(aes(label=ifelse(x > 0.2, as.character(feature),'')), hjust=0, vjust=0, size = 3) + theme(axis.title.x = element_text(face="bold", colour="#990000", size=10), axis.text.x = element_text(angle=90, vjust=0.5, size=4), plot.margin = margin(4,7,4,10, "cm")) + labs(title=AB)
+#individual AB;
+ggplot(ab_gain_mean[which(ab_gain_mean$AB == AB),], aes(x = feature, y = x, label = feature))+ geom_point(aes(color = x)) + geom_text(aes(label=ifelse(x > 0.15, as.character(feature),'')), hjust=0, vjust=0, size = 3) + theme(axis.title.x = element_text(face="bold", colour="#990000", size=10), axis.text.x = element_text(angle=90, vjust=0.5, size=4), plot.margin = margin(4,7,4,10, "cm")) + labs(title=AB)
 
 
 #create heatmap
