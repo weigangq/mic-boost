@@ -1,28 +1,5 @@
-getSimulated <- function(snp1, snp2, nstrains, snps){
-  n <- nstrains
-
-  btwn <- snp1 * snp2
-  
-  covar.m <- rbind(c(1.0, snp1, snp2), c(snp1, 1.0, btwn), c(snp2, btwn, 1.0))
-  
-  sigmaEV <- eigen(covar.m)
-  eps <- rnorm(n * ncol(sigmaEV$vectors))
-  meps <- matrix(eps, ncol = n, byrow = TRUE)    
-  meps <- sigmaEV$vectors %*% diag(sqrt(sigmaEV$values)) %*% meps #decomposition
-  
-  u <- t(pnorm(meps[2:nrow(meps),]))
-  decretize.u <-qbinom(u,1,0.5)
-  
-  rand <- matrix(rnorm(nstrains*(snps-2)),nrow = nstrains)
-  rand.u <- pnorm(rand)
-  snp.rand <- qbinom(rand.u,1,0.5)
-  x <- cbind(meps[1,], decretize.u, snp.rand)
-  
-  dimnames(x) <- list(c(), c("target", paste("feature", seq_len(ncol(x)-1), sep = ".")))
-  
-  return(x)
-}
-
+#this function simulates a table w/ cdg-levels to their respective strains & randomly associated snps w/ the exception that snp1 will be positively correlated.
+#the algorithm uses cholesky decomposition to achieve artificial correlation which is set by param: corco
 get1Simulated <- function(corco, nstrains, snps){
   r <- corco/10 # desired correlation coefficient
   sigma <- matrix(c(1,r,r,1), ncol=2) # var-covariance matrix
@@ -43,8 +20,10 @@ get1Simulated <- function(corco, nstrains, snps){
   return(x)
 }
 
-#this cholesky method does not seem too stable compared to eigen decomposition but it is possible to generate multiple correlated variables using cholesky decomposition
-getSimulated.chol <- function(snp1, snp2, nstrains, snps){
+#this function simulates a table w/ cdg-levels to their respective strains & randomly associated snps w/ the exception that snp1&2 will be positively correlated.
+#the algorithm uses cholesky decomposition to achieve artificial correlation
+#by default, the covariance btwn snp1&2 is the avg of their variance
+getSimulated <- function(snp1, snp2, nstrains, snps){
   n <- nstrains
   
   btwn <- snp1 * snp2
@@ -69,6 +48,7 @@ getSimulated.chol <- function(snp1, snp2, nstrains, snps){
   return(x)
 }
 
+#this function requires the package xgboost & will run the xgboost function w/ our tested best set of parameters. it will output an "importance matrix" listing the feature, gain, cover, and frequency. 
 runXg <- function(x){
   require(xgboost)
   
@@ -79,6 +59,7 @@ runXg <- function(x){
   return(importance_matrix)
 }
 
+#this function does the same as runXg(x) but w/ cross-validation and therefore each output will be different
 runXg.cv <- function(x){
   require(xgboost)
 
@@ -102,24 +83,8 @@ runXg.cv <- function(x){
 } 
 
 
-getPV <- function(df){
 
-  p.value <- sapply(2:ncol(df), function(x){
-    if((sum(df[,x], na.rm = T) > 1) & (!sum(df[,x], na.rm = T) == nrow(df)-1)){
-      t.test(df[,1] ~ df[,x])$p.value
-    }else if(sum(df[,x], na.rm = T) == nrow(df)-1){
-      t.test(df[,1], mu = 1)$p.value
-    }else {
-      t.test(df[,1], mu= df[which(df[,x] == 1),][,1])$p.value
-    }
-  })
-
-  p.value <- as.data.frame(p.value, row.names=colnames(df[,2:ncol(df)]))
-
-  return(t(as.matrix(p.value)))
-}
-
-
+#this function organizes the simulated table, importance matrix, and desired vs. calculated correlation coefficient and outputs a table that only captures the 
 getTable <- function(x, importance_matrix, cor){
   core.f <- c("feature.1$", "feature.2$") #correlated features to target
   
@@ -168,6 +133,52 @@ getTable <- function(x, importance_matrix, cor){
   x.master <- data.frame(feature, SNPs, strains, cor_given, cor_actual, p.value, gain, cover, rank)
   
   return(x.master)
+}
+
+#this function simulates a table w/ cdg-levels to their respective strains & randomly associated snps w/ the exception that snp1&2 will be positively correlated.
+#the algorithm uses eigen decomposition achieve artificial correlation
+#by default, the covariance btwn snp1&2 is the avg of their variance
+getSimulated.eigen <- function(snp1, snp2, nstrains, snps){
+  n <- nstrains
+  
+  btwn <- snp1 * snp2
+  
+  covar.m <- rbind(c(1.0, snp1, snp2), c(snp1, 1.0, btwn), c(snp2, btwn, 1.0))
+  
+  sigmaEV <- eigen(covar.m)
+  eps <- rnorm(n * ncol(sigmaEV$vectors))
+  meps <- matrix(eps, ncol = n, byrow = TRUE)    
+  meps <- sigmaEV$vectors %*% diag(sqrt(sigmaEV$values)) %*% meps #decomposition
+  
+  u <- t(pnorm(meps[2:nrow(meps),]))
+  decretize.u <-qbinom(u,1,0.5)
+  
+  rand <- matrix(rnorm(nstrains*(snps-2)),nrow = nstrains)
+  rand.u <- pnorm(rand)
+  snp.rand <- qbinom(rand.u,1,0.5)
+  x <- cbind(meps[1,], decretize.u, snp.rand)
+  
+  dimnames(x) <- list(c(), c("target", paste("feature", seq_len(ncol(x)-1), sep = ".")))
+  
+  return(x)
+}
+
+#this function calculates the p value for the binary snps w/ respect to the cdg-level. the input param is the simulated table w/ cdg-level & binary snps.
+getPV <- function(df){
+  
+  p.value <- sapply(2:ncol(df), function(x){
+    if((sum(df[,x], na.rm = T) > 1) & (!sum(df[,x], na.rm = T) == nrow(df)-1)){
+      t.test(df[,1] ~ df[,x])$p.value
+    }else if(sum(df[,x], na.rm = T) == nrow(df)-1){
+      t.test(df[,1], mu = 1)$p.value
+    }else {
+      t.test(df[,1], mu= df[which(df[,x] == 1),][,1])$p.value
+    }
+  })
+  
+  p.value <- as.data.frame(p.value, row.names=colnames(df[,2:ncol(df)]))
+  
+  return(t(as.matrix(p.value)))
 }
 
 
