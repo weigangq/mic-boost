@@ -84,7 +84,7 @@ runXg.cv <- function(x){
 
 
 
-#this function organizes the simulated table, importance matrix, and desired vs. calculated correlation coefficient and outputs a table that only captures the 
+#this function organizes the simulated table, importance matrix, and desired vs. calculated correlation coefficient and outputs a table that only captures information about snp1 & snp2 
 getTable <- function(x, importance_matrix, cor){
   core.f <- c("feature.1$", "feature.2$") #correlated features to target
   
