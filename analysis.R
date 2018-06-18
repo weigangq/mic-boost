@@ -1,11 +1,12 @@
-source("~/qiulab/cdg/cdg-functions.R")
-x <- read.csv("~/qiulab/mskcc-sepsis-resistance/antibioticResistanceNorm.csv", header = TRUE, row.names = 1) #8 antibiotics table
+setwd("~/qiulab/mskcc-sepsis-resistance/mic-boost/")
+source("cdg-functions.R")
+x <- read.csv("data/antibioticResistanceNorm.csv", header = TRUE, row.names = 1) #8 antibiotics table
 
-x.snps <- read.csv("~/qiulab/mskcc-sepsis-resistance/processedSNPs.csv", header = TRUE, row.names = 1, stringsAsFactors = F) #snp table
+x.snps <- read.csv("data/processedSNPs.csv", header = TRUE, row.names = 1, stringsAsFactors = F) #snp table
 
-yinhen.3 <- read.csv("~/qiulab/mskcc-sepsis-resistance/mutualReduced_3.csv", header = T, row.names = 1, na.strings = T)
+yinhen.3 <- read.csv("data/mutualReduced_3.csv", header = T, row.names = 1, na.strings = T)
 
-yinhen.7 <- read.csv("~/qiulab/mskcc-sepsis-resistance/mutualReduced_7.csv", header = T, row.names = 1, na.strings = T)
+yinhen.7 <- read.csv("data/mutualReduced_7.csv", header = T, row.names = 1, na.strings = T)
 
 x <- x[-which(rownames(x) == "PA7"),] #remove PA7 b/c it's another species
 
@@ -41,7 +42,7 @@ for (i in 1:length(colnames(x))){
   X.7[[i]] <- as.matrix(data_7)
 }
 
-n <- 1000
+n <- 100
 loopOverList <- function(x){
   iter <- 0
   inner <- list()
@@ -75,25 +76,26 @@ ab_gain_mean <- aggregate(master$Gain, by = list(feature = master$Feature, AB = 
 library(ggplot2)
 
 #facet graph of the average of significant SNPs after 1000 iterations per AB
-p <- ggplot(ab_gain_mean, aes(x = feature, y = x, label = feature)) + geom_point(aes(color = x)) + facet_wrap(~ AB) + theme(axis.title.x = element_text(face="bold", colour="#990000", size=10), axis.text.x = element_text(angle=90, vjust=0.5, size=4))
+p <- ggplot(ab_gain_mean, aes(x = feature, y = x, label = feature)) + geom_point(aes(color = x)) + facet_wrap(~ AB) + labs(y="average") + theme(axis.title.x = element_text(face="bold", colour="#990000", size=10), axis.text.x = element_text(angle=90, vjust=0.5, size=4), axis.title.y = element_text(face="bold", colour = "#990000"))
 
-p + geom_text(aes(label=ifelse(x > 0.2, as.character(feature),'')), hjust=0, vjust=0, size = 3) + labs(title="Mean of SNP Gains in 1000 runs per Antibiotic(8)")
+p + geom_text(aes(label=ifelse(x > 0.15, as.character(feature),'')), hjust=0, vjust=0, size = 3) + labs(title="Mean of highly ranked SNP Gains collected over 1000x iteration per AB(8)")
 
 
 #tree plotting
 
 library(phytools)
-cdg.tr <- read.tree(file = "~/qiulab/cdg/data/cdg-tree-mid.dnd")
-cdg.names <- read.table(file = "~/qiulab/cdg/data/cdg.strains.txt3", row.names = 1, stringsAsFactors = F)
-cdg.tr$tip.label <- cdg.names[cdg.tr$tip.label,1]
+# cdg.tr <- read.tree(file = "~/qiulab/cdg/data/cdg-tree-mid.dnd")
+cdg.tr <- read.tree(file = "~/qiulab/mskcc-sepsis-resistance/mic-boost/core-tree-30otus.dnd")
+# cdg.names <- read.table(file = "~/qiulab/cdg/data/cdg.strains.txt3", row.names = 1, stringsAsFactors = F)
+# cdg.tr$tip.label <- cdg.names[cdg.tr$tip.label,1]
 
 #make new x table re-ordered by phylo tree tips
 #FIND MISMATCHING ROWS 
-x.false <- which(rownames(x) %in% cdg.names[,1] == FALSE) #strain not in table x
-cdg.false <- which(cdg.names[,1] %in% rownames(x)[-x.false] == FALSE) #strain not in table cdg.names
+x.false <- which(rownames(x) %in% cdg.tr$tip.label == FALSE) #strain not in table x
+cdg.false <- which(cdg.tr$tip.label %in% rownames(x)[-x.false] == FALSE) #strain not in table cdg.names
 x.ab <- as.matrix(x[-x.false,])
-x.ab <- rbind(x.ab, c(rep(NA,8))) #pad table x.ab w/ "W70332" to match cdg.names table
-rownames(x.ab)[30] <- "W70332"
+# x.ab <- rbind(x.ab, c(rep(NA,8))) #pad table x.ab w/ "W70332" to match cdg.names table
+# rownames(x.ab)[30] <- "W70332"
 x.ab <- x.ab[match(cdg.tr$tip.label,row.names(x.ab)),] #reorder AB to tree tips
 
 #reorder snps by tree tips
@@ -118,7 +120,7 @@ displaySignificantSNPs <- function(AB){
 
   name.ordered <- paste("SNP",sep="", sort(as.numeric(gsub(".*P","", c(low, high))))) #combine & sort low, high; this step is necessary for display
   
-  mtext(name.ordered, side = 3, at = 50:(49+length(name.ordered)), cex = 0.6, las = 2, adj=0.2) #display SNP names
+  mtext(name.ordered, side = 3, at = 50:(49+length(name.ordered)), cex = 0.5, las = 2, adj=0.2) #display SNP names
   
   for (i in 1:length(name.ordered)){
     label = name.ordered[i]
@@ -127,7 +129,7 @@ displaySignificantSNPs <- function(AB){
   }
   
   gain_mean_specific <- ab_gain_mean[which(ab_gain_mean$AB == AB),]
-  plot(gain_mean_specific[,3], xaxt="n", ylab = "average", xlab = "names")
+  plot(gain_mean_specific[,3], xaxt="n", ylab = "average", xlab = "features")
   axis(1, at=1:nrow(gain_mean_specific), labels=gain_mean_specific[,1], las=2, cex.axis = 0.8)
   distinct <- which(gain_mean_specific[,3] >.1) #specific plotting points
   text(y = gain_mean_specific[distinct,3], x=distinct, labels = gain_mean_specific[distinct,1], cex = 0.7, pos = 3)
@@ -136,8 +138,10 @@ displaySignificantSNPs <- function(AB){
 
 
 #variable to change AB name
-AB <- colnames(x.ab)[3] #can cycle through all 8
-displaySignificantSNPs(AB)
+for (i in 1:8) {
+  AB <- colnames(x.ab)[i] #can cycle through all 8
+  displaySignificantSNPs(AB)
+}
 
 
 #create heatmap
